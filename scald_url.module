@@ -3,6 +3,12 @@
 /**
  * @file
  * Module file for the scald_url module.
+ *
+ * @Issue(
+ *   "Add support for jquery-urlive"
+ *   type="feature"
+ *   priority="normal"
+ * )
  */
 
 define('SCALD_URL_URL_FIELD', 'scald_url');
