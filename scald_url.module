@@ -79,15 +79,14 @@ function scald_url_scald_add_form_fill(&$atom, $form, $form_state) {
   }
 
   // Prefill the scald_thumbnail field, if an image was detected.
-  if (empty($info->thumbnail_url)) {
+  if (empty($info->thumbnail_url) || empty($info->thumbnail)) {
     return;
   }
 
-  $thumb = drupal_http_request($info->thumbnail_url);
   $dir = ScaldAtomController::getThumbnailPath('url');
-  if ($thumb->code == 200 && file_prepare_directory($dir, FILE_CREATE_DIRECTORY)) {
+  if (file_prepare_directory($dir, FILE_CREATE_DIRECTORY)) {
     $dest = $dir . '/' . $atom->base_id . '.jpg';
-    $file = file_save_data($thumb->data, $dest);
+    $file = file_save_data($info->thumbnail->data, $dest);
 
     if ($file) {
       // Set the file status to temporary.
@@ -254,13 +253,6 @@ function _scald_url_extract_info($url) {
   }
 
   // Get the main image.
-  /**
-   * @Issue(
-   *   "Main image is not properly detected and added to the thumbnail field"
-   *   type="bug"
-   *   priority="normal"
-   * )
-   */
   $image_meta_tags = array(
     'thumbnail',
     'og:image',
@@ -276,7 +268,19 @@ function _scald_url_extract_info($url) {
       if (strpos($info->thumbnail_url, '//') === 0) {
         $info->thumbnail_url = 'http:' . $info->thumbnail_url;
       }
-      break;
+
+      // Sometimes one or of the metatag images may get an 'Unauthorized'
+      // response. Try to get the image, continue if we can't in case another
+      // image is available.
+      $thumbnail = drupal_http_request($info->thumbnail_url);
+      if ($thumbnail->code == 200) {
+        $info->thumbnail = $thumbnail;
+        break;
+      }
+
+      // If the response is not 200, we can't get the image - continue to the
+      // next image metatag.
+      $info->thumbnail_url = null;
     }
   }
 
