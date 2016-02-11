@@ -1,0 +1,102 @@
+<?php
+
+/**
+ * @file
+ * Scald URL Installation
+ */
+
+/**
+ * Implements hook_install().
+ */
+function scald_url_install() {
+  scald_add_type('url', 'URL', 'URL');
+}
+
+/**
+ * Implements hook_enable().
+ */
+function scald_url_enable() {
+  _scald_url_create_url_field();
+  _scald_url_create_url_instance();
+  _scald_url_create_description_field();
+  _scald_url_create_description_instance();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function scald_url_uninstall() {
+  drupal_load('module', 'scald');
+  // If Scald is disabled, its classes are not autoloaded.
+  module_load_include('inc', 'scald', 'includes/ScaldAtomController');
+
+  scald_remove_type('url');
+}
+
+/**
+ * Create a field to store the url.
+ */
+function _scald_url_create_url_field() {
+  if (field_info_field(SCALD_URL_URL_FIELD)) {
+    return;
+  }
+
+  $field = array(
+    'field_name' => SCALD_URL_URL_FIELD,
+    'type' => 'link_field',
+  );
+  field_create_field($field);
+}
+
+/**
+ * Create a scald_url field instance for url atom bundle.
+ */
+function _scald_url_create_url_instance() {
+  if (field_read_instance('scald_atom', SCALD_URL_URL_FIELD, 'url')) {
+    return;
+  }
+
+  $instance = array(
+    'field_name' => SCALD_URL_URL_FIELD,
+    'entity_type' => 'scald_atom',
+    'bundle' => 'url',
+    'label' => 'URL',
+    'required' => TRUE,
+  );
+
+  field_create_instance($instance);
+}
+
+/**
+ * Create a field to store the description.
+ */
+function _scald_url_create_description_field() {
+  if (field_info_field(SCALD_URL_DESCRIPTION_FIELD)) {
+    return;
+  }
+
+  $field = array(
+    'field_name' => SCALD_URL_DESCRIPTION_FIELD,
+    'type' => 'text_long',
+  );
+  field_create_field($field);
+}
+
+/**
+ * Create a scald_description field instance for url atom bundle.
+ */
+function _scald_url_create_description_instance() {
+  if (field_read_instance('scald_atom', SCALD_URL_DESCRIPTION_FIELD, 'url')) {
+    return;
+  }
+
+  $instance = array(
+    'field_name' => SCALD_URL_DESCRIPTION_FIELD,
+    'entity_type' => 'scald_atom',
+    'bundle' => 'url',
+    'label' => 'Description',
+    'required' => FALSE,
+  );
+
+  field_create_instance($instance);
+}

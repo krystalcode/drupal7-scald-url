@@ -1,0 +1,291 @@
+<?php
+
+/**
+ * @file
+ * Module file for the scald_url module.
+ */
+
+define('SCALD_URL_URL_FIELD', 'scald_url');
+define('SCALD_URL_DESCRIPTION_FIELD', 'scald_description');
+
+/**
+ * Implements hook_scald_atom_providers().
+ */
+function scald_url_scald_atom_providers() {
+  return array(
+    'url' => 'Resource URL',
+  );
+  // This code will never be hit, but is necessary to mark the string
+  // for translation on localize.d.o
+  t('Resource URL');
+}
+
+/**
+ * Implements hook_scald_add_form().
+ */
+function scald_url_scald_add_form(&$form, &$form_state) {
+  $form['identifier'] = array(
+    '#type' => 'textfield',
+    '#title' => t('URL Resource'),
+    '#element_validate' => array('scald_url_validate_id'),
+    '#default_value' => '',
+  );
+}
+
+/**
+ * Implements hook_scald_add_form_fill().
+ */
+function scald_url_scald_add_form_fill(&$atom, $form, $form_state) {
+
+  // Get the URL.
+  $url = $form_state['values']['identifier'];
+
+  // We use the md5 hash of the url as identifier.
+  $atom->base_id = md5($url);
+
+  // Extract information from the page (title and metadata).
+  $info = _scald_url_extract_info($url);
+
+  // Prefill the title.
+  $atom->title = $info->title;
+
+  // Prefill the scald_url field.
+  $language = field_language('scald_atom', $atom, SCALD_URL_URL_FIELD);
+  $atom->{SCALD_URL_URL_FIELD}[$language][0]['title'] = $atom->title;
+  $atom->{SCALD_URL_URL_FIELD}[$language][0]['url'] = $url;
+
+  // Prefill the scald_tags field.
+  if (!empty($info->keywords)) {
+    $langcode = field_language('scald_atom', $atom, 'scald_tags');
+    $tags = explode(',', $info->keywords);
+    foreach ($tags as $index => $tag) {
+      $atom->scald_tags[$langcode][$index] = array(
+        'tid' => $index,  // Beware, this is not a real tid, it's just an index
+        'taxonomy_term' => (object) (array('name' => $tag))
+      );
+    }
+  }
+
+  // Prefill the scald_description field.
+  if (!empty($info->description)) {
+    $langcode = field_language('scald_atom', $atom, SCALD_URL_DESCRIPTION_FIELD);
+    $atom->{SCALD_URL_DESCRIPTION_FIELD}[$language][0]['value'] = $info->description;
+  }
+
+  // Prefill the scald_thumbnail field, if an image was detected.
+  if (empty($info->thumbnail_url)) {
+    return;
+  }
+
+  $thumb = drupal_http_request($info->thumbnail_url);
+  $dir = ScaldAtomController::getThumbnailPath('url');
+  if ($thumb->code == 200 && file_prepare_directory($dir, FILE_CREATE_DIRECTORY)) {
+    $dest = $dir . '/' . $atom->base_id . '.jpg';
+    $file = file_save_data($thumb->data, $dest);
+
+    if ($file) {
+      // Set the file status to temporary.
+      $query = db_update('file_managed')
+        ->condition('fid', $file->fid)
+        ->fields(array('status' => 0))
+        ->execute();
+
+      $atom->scald_thumbnail[LANGUAGE_NONE][0] = (array) $file;
+    }
+  }
+}
+
+function scald_url_form_scald_atom_add_form_options_alter(&$form, &$form_state, $form_id) {
+  if ($form['atom0']['#bundle'] !== 'url') {
+    return;
+  }
+
+  // The url should never be changed as it uniquely identifies the Atom.
+  // The title should always follow the title of the Atom.
+  // We therefore disallow users to change the scald_url field.
+  $form['atom0'][SCALD_URL_URL_FIELD]['#access'] = FALSE;
+
+  // Add url validation.
+  $form['#validate'][] = '_scald_url_add_form_options_validate';
+}
+
+function _scald_url_add_form_options_validate(&$form, &$form_state) {
+  // Copy the title of the Atom to the title of the url field.
+  $language = $form['atom0'][SCALD_URL_URL_FIELD]['#language'];
+  $form_state['values']['atom0'][SCALD_URL_URL_FIELD][$language][0]['title'] = $form_state['values']['atom0']['title'];
+
+  // @Issue("Validation of the url field should be triggered here"
+}
+
+/**
+ * Implements hook_scald_fetch().
+ */
+function scald_url_scald_fetch($atom, $type) {
+  $items = field_get_items('scald_atom', $atom, 'scald_thumbnail');
+  if ($items && file_exists($items[0]['uri'])) {
+    $atom->file_source = $items[0]['uri'];
+    $atom->thumbnail_source = $items[0]['uri'];
+  }
+}
+
+/**
+ * Implements hook_scald_prerender().
+ */
+function scald_url_scald_prerender($atom, $context, $options, $mode) {
+  $function = '_scald_url_scald_prerender__' . $mode;
+  if (function_exists($function)) {
+    $function($atom, $context, $options, $mode);
+  }
+}
+
+function _scald_url_scald_prerender__atom($atom, $context, $options, $mode) {
+  $atom->rendered->player = theme(
+    'scald_url_iframe_player',
+    array('vars' =>
+      array(
+        'iframe_url'    => $atom->{SCALD_URL_URL_FIELD}[$atom->language][0]['url'],
+        'iframe_width'  => (!empty($atom->data['width']) ? $atom->data['width'] : '100%'),
+        'iframe_height' => (!empty($atom->data['height']) ? $atom->data['height'] : '500px'),
+      )
+    )
+  );
+}
+
+function _scald_url_scald_contenxts() {
+  return array(
+    'link' => array(
+      'title'           => t('Link'),
+      'description'     => t('Render the atom as a link.'),
+      'render_language' => 'XHTML',
+      'parseable'       => TRUE,
+      'hidden'          => FALSE,
+      'formats'         => array(),
+    ),
+  );
+}
+
+/**
+ * Implements hook_theme().
+ */
+function scald_url_theme() {
+  return array(
+    'scald_url_iframe_player' => array(
+      'variables' => array('vars' => NULL),
+      'template' => 'scald-url-iframe-player'
+    ),
+  );
+}
+
+/**
+ * Checks if a media has already been imported, based on its media id.
+ *
+ * @param string $id
+ *   The media identifier
+ *
+ * @return mixed
+ *   FALSE if the media was never imported, the scald identifier of
+ *   the media otherwise.
+ */
+function scald_url_already_imported($id) {
+  $query = array('provider' => 'scald_url', 'base_id' => $id);
+  return scald_search($query, FALSE, TRUE);
+}
+
+/**
+ * Form element validation handler for media url.
+ */
+function scald_url_validate_id($element, &$form_state) {
+  $url = $form_state['values']['identifier'];
+  $id = md5($url);
+  if (!valid_url($url, TRUE)) {
+    form_error($element, t('Invalid media url, you must specify an absolute url.'));
+  }
+  elseif (scald_url_already_imported($id)) {
+    form_error($element, t('This URL resource has already been imported.'));
+  }
+}
+
+/**
+ * Extract the main image from the given url.
+ */
+function _scald_url_extract_info($url) {
+  $info = new stdClass();
+
+  // Get the title.
+  $info->title = _scald_url_extract_title($url);
+
+  /**
+   * @Issue(
+   *   "Reduce requests for extracting info to one"
+   *   description="There may be a way to use get_meta_tags using results of
+   *   file_get_contents from _scald_url_extract_title to avoid making two
+   *   requests"
+   * )
+   */
+  $meta_tags = get_meta_tags($url);
+
+  if (empty($meta_tags)) {
+    return;
+  }
+
+  // Get the description.
+  $description_meta_tags = array(
+    'description',
+    'og:description',
+    'twitter:description',
+  );
+
+  foreach ($description_meta_tags as $description_meta_tag) {
+    if (!empty($meta_tags[$description_meta_tag])) {
+      $info->description = $meta_tags[$description_meta_tag];
+      break;
+    }
+  }
+
+  // Get the keywords.
+  if (!empty($meta_tags['keywords'])) {
+    $info->keywords = $meta_tags['keywords'];
+  }
+
+  // Get the main image.
+  $image_meta_tags = array(
+    'thumbnail',
+    'og:image',
+    'twitter:image',
+    'twitter:image0',
+  );
+
+  foreach ($image_meta_tags as $image_meta_tag) {
+    if (!empty($meta_tags[$image_meta_tag])) {
+      $info->thumbnail_url = $meta_tags[$image_meta_tag];
+
+      // Add schema if missing.
+      if (strpos($info->thumbnail_url, '//') === 0) {
+        $info->thumbnail_url = 'http:' . $info->thumbnail_url;
+      }
+      break;
+    }
+  }
+
+  return $info;
+}
+
+/**
+ * Extract the page title from the given url.
+ */
+function _scald_url_extract_title($url) {
+  $contents = file_get_contents($url);
+
+  if (!$contents) {
+    return '';
+  }
+
+  $title = array();
+  preg_match("/\<title\>(.*)\<\/title\>/", $contents, $title);
+
+  if (empty($title[1])) {
+    return '';
+  }
+
+  return html_entity_decode($title[1]);
+}

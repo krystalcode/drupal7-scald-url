@@ -1,0 +1,10 @@
+name = Scald URL
+description = Provider: Provides atoms from urls.
+core = 7.x
+package = Scald
+
+dependencies[] = scald
+dependencies[] = link
+
+version = 7.x-1.x-dev
+project = scald_url
