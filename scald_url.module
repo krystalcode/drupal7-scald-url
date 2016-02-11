@@ -254,6 +254,13 @@ function _scald_url_extract_info($url) {
   }
 
   // Get the main image.
+  /**
+   * @Issue(
+   *   "Main image is not properly detected and added to the thumbnail field"
+   *   type="bug"
+   *   priority="normal"
+   * )
+   */
   $image_meta_tags = array(
     'thumbnail',
     'og:image',
